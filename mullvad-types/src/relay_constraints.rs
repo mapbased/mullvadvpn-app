@@ -9,8 +9,10 @@ use crate::{
 #[cfg(target_os = "android")]
 use jnix::{FromJava, IntoJava};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt};
-use talpid_types::net::{openvpn::ProxySettings, IpVersion, TransportProtocol, TunnelType};
+use std::{collections::HashSet, fmt, net::SocketAddr};
+use talpid_types::net::{
+    obfuscation, openvpn::ProxySettings, IpVersion, TransportProtocol, TunnelType,
+};
 
 pub trait Match<T> {
     fn matches(&self, other: &T) -> bool;
@@ -468,6 +470,44 @@ pub enum BridgeSettings {
     /// Let the relay selection algorithm decide on bridges, based on the relay list.
     Normal(BridgeConstraints),
     Custom(ProxySettings),
+}
+
+/// Contains obfuscation settings
+#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ObfuscationSettings {
+    pub active_obfuscator: Option<obfuscation::ObfuscatorType>,
+    pub custom_obfuscator_settings: Option<CustomObfuscatorSettings>,
+}
+
+impl fmt::Display for ObfuscationSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        use obfuscation::ObfuscatorType::*;
+        write!(f, "Currently using ")?;
+        match self.active_obfuscator {
+            None => write!(f, "no obfuscator.")?,
+            Some(Mock) => write!(f, "mock obfuscator.")?,
+            Some(Custom) => write!(f, "custom obfuscator.")?,
+        };
+
+        if let Some(custom_settings) = &self.custom_obfuscator_settings {
+            write!(
+                f,
+                " Custom obfuscator will connect to {} and try to reach {}.",
+                custom_settings.address, custom_settings.endpoint
+            )?;
+        }
+        Ok(())
+    }
+}
+
+
+/// Contains config for custom obfuscator
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CustomObfuscatorSettings {
+    pub address: SocketAddr,
+    pub endpoint: SocketAddr,
 }
 
 /// Limits the set of bridge servers to use in `mullvad-daemon`.

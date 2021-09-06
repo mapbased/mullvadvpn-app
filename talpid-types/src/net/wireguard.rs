@@ -17,6 +17,7 @@ pub struct TunnelParameters {
     pub connection: ConnectionConfig,
     pub options: TunnelOptions,
     pub generic_options: GenericTunnelOptions,
+    pub obfuscation: Option<super::obfuscation::ObfuscatorConfig>,
 }
 
 /// Connection-specific configuration in [`TunnelParameters`].

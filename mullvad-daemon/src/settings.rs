@@ -1,7 +1,7 @@
 #[cfg(not(target_os = "android"))]
 use futures::TryFutureExt;
 use mullvad_types::{
-    relay_constraints::{BridgeSettings, BridgeState, RelaySettingsUpdate},
+    relay_constraints::{BridgeSettings, BridgeState, ObfuscationSettings, RelaySettingsUpdate},
     settings::{DnsOptions, Settings},
     wireguard::{RotationInterval, WireguardData},
 };
@@ -11,7 +11,10 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
-use talpid_types::ErrorExt;
+use talpid_types::{
+    net::obfuscation::{ObfuscatorConfig, ObfuscatorType},
+    ErrorExt,
+};
 use tokio::{
     fs,
     io::{self, AsyncWriteExt},
@@ -313,6 +316,45 @@ impl SettingsPersister {
             true
         } else {
             false
+        }
+    }
+
+    pub async fn set_obfuscation_settings(
+        &mut self,
+        obfuscation_settings: ObfuscationSettings,
+    ) -> Result<bool, Error> {
+        let should_save = Self::update_field(
+            &mut self.settings.obfuscation_settings,
+            obfuscation_settings,
+        );
+
+        self.update(should_save).await
+    }
+
+    pub fn get_obfuscation_config(
+        &self,
+    ) -> Option<talpid_types::net::obfuscation::ObfuscatorConfig> {
+        match self
+            .settings
+            .obfuscation_settings
+            .active_obfuscator
+            .as_ref()?
+        {
+            ObfuscatorType::Mock => Some(ObfuscatorConfig::Mock),
+            ObfuscatorType::Custom => Some(ObfuscatorConfig::Custom {
+                address: self
+                    .settings
+                    .obfuscation_settings
+                    .custom_obfuscator_settings
+                    .as_ref()?
+                    .address,
+                remote_endpoint: self
+                    .settings
+                    .obfuscation_settings
+                    .custom_obfuscator_settings
+                    .as_ref()?
+                    .endpoint,
+            }),
         }
     }
 
