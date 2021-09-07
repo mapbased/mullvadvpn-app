@@ -13,7 +13,7 @@ use mullvad_rpc::{rest::Error as RestError, StatusCode};
 use mullvad_types::settings::DnsOptions;
 use mullvad_types::{
     account::AccountToken,
-    relay_constraints::{BridgeSettings, BridgeState, RelaySettingsUpdate},
+    relay_constraints::{BridgeSettings, BridgeState, ObfuscationSettings, RelaySettingsUpdate},
     relay_list::RelayList,
     settings::Settings,
     states::{TargetState, TunnelState},
@@ -232,6 +232,21 @@ impl ManagementService for ManagementServiceImpl {
 
         let (tx, rx) = oneshot::channel();
         self.send_command_to_daemon(DaemonCommand::SetBridgeSettings(tx, settings))?;
+        let settings_result = self.wait_for_result(rx).await?;
+        settings_result
+            .map(Response::new)
+            .map_err(map_settings_error)
+    }
+
+    async fn set_obfuscation_settings(
+        &self,
+        request: Request<types::ObfuscationSettings>,
+    ) -> ServiceResult<()> {
+        let settings =
+            ObfuscationSettings::try_from(request.into_inner()).map_err(map_protobuf_type_err)?;
+        log::debug!("set_obfuscation_settings({:?})", settings);
+        let (tx, rx) = oneshot::channel();
+        self.send_command_to_daemon(DaemonCommand::SetObfuscationSettings(tx, settings))?;
         let settings_result = self.wait_for_result(rx).await?;
         settings_result
             .map(Response::new)
@@ -922,5 +937,11 @@ fn map_account_history_error(error: account_history::Error) -> Status {
         account_history::Error::Serialize(..) | account_history::Error::WriteCancelled(..) => {
             Status::new(Code::Internal, error.to_string())
         }
+    }
+}
+
+fn map_protobuf_type_err(err: types::FromProtobufTypeError) -> Status {
+    match err {
+        types::FromProtobufTypeError::InvalidArgument(err) => Status::invalid_argument(err),
     }
 }

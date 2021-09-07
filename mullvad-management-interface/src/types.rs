@@ -396,6 +396,7 @@ impl From<&mullvad_types::settings::Settings> for Settings {
             auto_connect: settings.auto_connect,
             tunnel_options: Some(TunnelOptions::from(&settings.tunnel_options)),
             show_beta_releases: settings.show_beta_releases,
+            obfuscation_settings: Some(ObfuscationSettings::from(&settings.obfuscation_settings)),
             split_tunnel,
         }
     }
@@ -410,6 +411,35 @@ impl From<mullvad_types::relay_constraints::BridgeState> for BridgeState {
                 BridgeState::On => bridge_state::State::On,
                 BridgeState::Off => bridge_state::State::Off,
             }),
+        }
+    }
+}
+
+impl From<&mullvad_types::relay_constraints::ObfuscationSettings> for ObfuscationSettings {
+    fn from(settings: &mullvad_types::relay_constraints::ObfuscationSettings) -> Self {
+        use talpid_types::net::obfuscation::ObfuscatorType;
+        let active_obfuscator = i32::from(match settings.active_obfuscator {
+            Some(ObfuscatorType::Mock) => obfuscation_settings::ActiveObfuscator::Custom,
+            Some(ObfuscatorType::Custom) => obfuscation_settings::ActiveObfuscator::Mock,
+            None => obfuscation_settings::ActiveObfuscator::None,
+        });
+        Self {
+            active_obfuscator,
+            custom_obfuscator_settings: settings
+                .custom_obfuscator_settings
+                .as_ref()
+                .map(CustomObfuscatorSettings::from),
+        }
+    }
+}
+
+impl From<&mullvad_types::relay_constraints::CustomObfuscatorSettings>
+    for CustomObfuscatorSettings
+{
+    fn from(settings: &mullvad_types::relay_constraints::CustomObfuscatorSettings) -> Self {
+        Self {
+            address: settings.address.to_string(),
+            endpoint: settings.endpoint.to_string(),
         }
     }
 }
@@ -1141,6 +1171,55 @@ impl TryFrom<BridgeSettings> for mullvad_types::relay_constraints::BridgeSetting
                 Ok(mullvad_constraints::BridgeSettings::Custom(proxy_settings))
             }
         }
+    }
+}
+
+impl TryFrom<ObfuscationSettings> for mullvad_types::relay_constraints::ObfuscationSettings {
+    type Error = FromProtobufTypeError;
+
+    fn try_from(settings: ObfuscationSettings) -> Result<Self, Self::Error> {
+        use obfuscation_settings::ActiveObfuscator;
+        use talpid_types::net::obfuscation::ObfuscatorType;
+        let active_obfuscator = match ActiveObfuscator::from_i32(settings.active_obfuscator) {
+            Some(ActiveObfuscator::None) => None,
+            Some(ActiveObfuscator::Mock) => Some(ObfuscatorType::Mock),
+            Some(ActiveObfuscator::Custom) => Some(ObfuscatorType::Custom),
+            None => {
+                return Err(FromProtobufTypeError::InvalidArgument(
+                    "invalid active obfuscator",
+                ));
+            }
+        };
+
+        let custom_obfuscator_settings = match settings.custom_obfuscator_settings {
+            Some(settings) => Some(
+                mullvad_types::relay_constraints::CustomObfuscatorSettings::try_from(settings)?,
+            ),
+            None => None,
+        };
+        Ok(Self {
+            active_obfuscator,
+            custom_obfuscator_settings,
+        })
+    }
+}
+
+impl TryFrom<CustomObfuscatorSettings>
+    for mullvad_types::relay_constraints::CustomObfuscatorSettings
+{
+    type Error = FromProtobufTypeError;
+
+    fn try_from(settings: CustomObfuscatorSettings) -> Result<Self, Self::Error> {
+        Ok(Self {
+            address: settings
+                .address
+                .parse()
+                .map_err(|_| FromProtobufTypeError::InvalidArgument("invalid socket address"))?,
+            endpoint: settings
+                .endpoint
+                .parse()
+                .map_err(|_| FromProtobufTypeError::InvalidArgument("invalid socket address"))?,
+        })
     }
 }
 

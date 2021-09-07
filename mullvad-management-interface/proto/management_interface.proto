@@ -30,6 +30,7 @@ service ManagementService {
 	rpc GetCurrentLocation(google.protobuf.Empty) returns (GeoIpLocation) {}
 	rpc SetBridgeSettings(BridgeSettings) returns (google.protobuf.Empty) {}
 	rpc SetBridgeState(BridgeState) returns (google.protobuf.Empty) {}
+	rpc SetObfuscationSettings(ObfuscationSettings) returns (google.protobuf.Empty) {}
 
 	// Settings
 	rpc GetSettings(google.protobuf.Empty) returns (Settings) {}
@@ -261,6 +262,21 @@ message BridgeState {
 	State state = 1;
 }
 
+message CustomObfuscatorSettings {
+  string address = 1;
+  string endpoint = 2;
+}
+
+message ObfuscationSettings {
+  enum ActiveObfuscator {
+    NONE = 0;
+    MOCK = 1;
+    CUSTOM = 2;
+  }
+  ActiveObfuscator active_obfuscator = 1;
+  CustomObfuscatorSettings custom_obfuscator_settings = 2;
+}
+
 message Settings {
 	string account_token = 1;
 	RelaySettings relay_settings = 2;
@@ -272,6 +288,7 @@ message Settings {
 	TunnelOptions tunnel_options = 8;
 	bool show_beta_releases = 9;
 	SplitTunnelSettings split_tunnel = 10;
+	ObfuscationSettings obfuscation_settings = 11;
 }
 
 message SplitTunnelSettings {

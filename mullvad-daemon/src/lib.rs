@@ -35,8 +35,8 @@ use mullvad_types::{
     endpoint::MullvadEndpoint,
     location::GeoIpLocation,
     relay_constraints::{
-        BridgeSettings, BridgeState, Constraint, InternalBridgeConstraints, RelaySettings,
-        RelaySettingsUpdate,
+        BridgeSettings, BridgeState, Constraint, InternalBridgeConstraints, ObfuscationSettings,
+        RelaySettings, RelaySettingsUpdate,
     },
     relay_list::{Relay, RelayList},
     settings::{DnsOptions, DnsState, Settings},
@@ -293,6 +293,7 @@ pub enum DaemonCommand {
     /// Toggle wireguard-nt on or off
     #[cfg(target_os = "windows")]
     UseWireGuardNt(ResponseTx<(), Error>, bool),
+    SetObfuscationSettings(ResponseTx<(), settings::Error>, ObfuscationSettings),
     /// Makes the daemon exit the main loop and quit.
     Shutdown,
     /// Saves the target tunnel state and enters a blocking state. The state is restored
@@ -1147,7 +1148,7 @@ where
                     },
                     options: tunnel_options.wireguard.options,
                     generic_options: tunnel_options.generic,
-                    obfuscation: None,
+                    obfuscation: self.settings.get_obfuscation_config(),
                 }
                 .into())
             }
@@ -1242,6 +1243,9 @@ where
             SetSplitTunnelState(tx, enabled) => self.on_set_split_tunnel_state(tx, enabled).await,
             #[cfg(target_os = "windows")]
             UseWireGuardNt(tx, state) => self.on_use_wireguard_nt(tx, state).await,
+            SetObfuscationSettings(tx, settings) => {
+                self.on_set_obfuscation_settings(tx, settings).await
+            }
             Shutdown => self.trigger_shutdown_event(),
             PrepareRestart => self.on_prepare_restart(),
             #[cfg(target_os = "android")]
@@ -2141,6 +2145,30 @@ where
                     e.display_chain_with_msg("Failed to set new bridge settings")
                 );
                 Self::oneshot_send(tx, Err(e), "set_bridge_settings");
+            }
+        }
+    }
+
+    async fn on_set_obfuscation_settings(
+        &mut self,
+        tx: ResponseTx<(), settings::Error>,
+        new_settings: ObfuscationSettings,
+    ) {
+        match self.settings.set_obfuscation_settings(new_settings).await {
+            Ok(settings_changed) => {
+                if settings_changed {
+                    self.event_listener
+                        .notify_settings(self.settings.to_settings());
+                    self.reconnect_tunnel();
+                }
+                Self::oneshot_send(tx, Ok(()), "set_obfuscation_settings");
+            }
+            Err(err) => {
+                log::error!(
+                    "{}",
+                    err.display_chain_with_msg("Failed to set obfuscation settings")
+                );
+                Self::oneshot_send(tx, Err(err), "set_obfuscation_settings");
             }
         }
     }
