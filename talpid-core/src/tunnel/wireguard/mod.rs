@@ -130,7 +130,6 @@ fn maybe_create_obfuscator(
     config: &mut Config,
     close_msg_sender: sync_mpsc::Sender<CloseMsg>,
 ) -> Result<Option<ObfuscatorHandle>> {
-    // TODO: FIXFIXFIX
     // There are one or two peers.
     // The first one is always the entry relay.
     if let Some(ref mut first_peer) = config.peers.get_mut(0) {
