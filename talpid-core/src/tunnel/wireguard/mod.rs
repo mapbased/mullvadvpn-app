@@ -147,15 +147,19 @@ fn maybe_create_obfuscator(
             first_peer.endpoint = endpoint.address;
             first_peer.protocol = endpoint.protocol;
             let (runner, abort_handle) = abortable(async move {
-                if let Err(error) = obfuscator.run().await {
-                    log::error!(
-                        "{}",
-                        error.display_chain_with_msg("Obfuscation controller failed")
-                    );
+                match obfuscator.run().await {
+                    Ok(_) => {
+                        let _ = close_msg_sender.send(CloseMsg::ObfuscatorExpired);
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "{}",
+                            error.display_chain_with_msg("Obfuscation controller failed")
+                        );
+                        let _ = close_msg_sender
+                            .send(CloseMsg::ObfuscatorFailed(Error::ObfuscatorError(error)));
+                    }
                 }
-                // TODO: Should we send a different message or include the error here, if one
-                // exists?
-                let _ = close_msg_sender.send(CloseMsg::Stop);
             });
             runtime.spawn(runner);
             return Ok(Some(ObfuscatorHandle::new(abort_handle)));
@@ -404,8 +408,9 @@ impl WireguardMonitor {
     pub fn wait(mut self) -> Result<()> {
         let wait_result = match self.close_msg_receiver.recv() {
             Ok(CloseMsg::PingErr) => Err(Error::TimeoutError),
-            Ok(CloseMsg::Stop) => Ok(()),
+            Ok(CloseMsg::Stop) | Ok(CloseMsg::ObfuscatorExpired) => Ok(()),
             Ok(CloseMsg::SetupError(error)) => Err(error),
+            Ok(CloseMsg::ObfuscatorFailed(error)) => Err(error),
             Err(_) => Ok(()),
         };
 
@@ -553,6 +558,8 @@ enum CloseMsg {
     Stop,
     PingErr,
     SetupError(Error),
+    ObfuscatorExpired,
+    ObfuscatorFailed(Error),
 }
 
 /// Close handle for a WireGuard tunnel.
