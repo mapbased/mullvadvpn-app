@@ -90,7 +90,7 @@ impl Obfuscation {
         let obfuscation_settings = ObfuscationSettings::try_from(
             settings
                 .obfuscation_settings
-                .expect("No obfuscation settnigs"),
+                .expect("No obfuscation settings"),
         )
         .expect("failed to parse obfuscation settings");
         Ok(obfuscation_settings)
@@ -112,7 +112,7 @@ fn create_obfuscation_set_subcommand() -> clap::App<'static, 'static> {
         .setting(clap::AppSettings::SubcommandRequiredElseHelp)
         .subcommand(
             clap::SubCommand::with_name("type")
-                .about("Set bridge state")
+                .about("Set obfuscation type")
                 .arg(
                     clap::Arg::with_name("type")
                         .help("Specifies what kind of obfuscation should be used, if any")
