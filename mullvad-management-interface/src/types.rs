@@ -419,8 +419,8 @@ impl From<&mullvad_types::relay_constraints::ObfuscationSettings> for Obfuscatio
     fn from(settings: &mullvad_types::relay_constraints::ObfuscationSettings) -> Self {
         use talpid_types::net::obfuscation::ObfuscatorType;
         let active_obfuscator = i32::from(match settings.active_obfuscator {
-            Some(ObfuscatorType::Mock) => obfuscation_settings::ActiveObfuscator::Custom,
-            Some(ObfuscatorType::Custom) => obfuscation_settings::ActiveObfuscator::Mock,
+            Some(ObfuscatorType::Mock) => obfuscation_settings::ActiveObfuscator::Mock,
+            Some(ObfuscatorType::Custom) => obfuscation_settings::ActiveObfuscator::Custom,
             None => obfuscation_settings::ActiveObfuscator::None,
         });
         Self {
