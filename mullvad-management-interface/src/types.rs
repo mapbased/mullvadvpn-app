@@ -272,7 +272,6 @@ impl From<mullvad_types::ConnectionConfig> for ConnectionConfig {
                                 .map(|address| address.to_string())
                                 .collect(),
                             endpoint: config.peer.endpoint.to_string(),
-                            protocol: i32::from(TransportProtocol::from(config.peer.protocol)),
                         }),
                         ipv4_gateway: config.ipv4_gateway.to_string(),
                         ipv6_gateway: config
@@ -1070,7 +1069,6 @@ impl TryFrom<ConnectionConfig> for mullvad_types::ConnectionConfig {
                             public_key: wireguard::PublicKey::from(public_key),
                             allowed_ips,
                             endpoint,
-                            protocol: try_transport_protocol_from_i32(peer.protocol)?,
                         },
                         exit_peer: None,
                         ipv4_gateway,

@@ -19,7 +19,7 @@ use std::{
 };
 #[cfg(windows)]
 use talpid_types::BoxedError;
-use talpid_types::{net::TransportProtocol, ErrorExt};
+use talpid_types::ErrorExt;
 use tunnel_obfuscation::{
     create_obfuscator, Error as ObfuscationError, Settings as ObfuscationSettings, Udp2TcpSettings,
 };
@@ -133,7 +133,7 @@ fn maybe_create_obfuscator(
     // There are one or two peers.
     // The first one is always the entry relay.
     if let Some(ref mut first_peer) = config.peers.get_mut(0) {
-        if first_peer.protocol == TransportProtocol::Tcp {
+        if first_peer.endpoint.port() == 8090 {
             let settings = Udp2TcpSettings {
                 peer: first_peer.endpoint,
                 #[cfg(target_os = "linux")]
@@ -144,7 +144,6 @@ fn maybe_create_obfuscator(
                 .map_err(Error::CreateObfuscatorError)?;
             let endpoint = obfuscator.endpoint();
             first_peer.endpoint = endpoint.address;
-            first_peer.protocol = endpoint.protocol;
             let (runner, abort_handle) = abortable(async move {
                 match obfuscator.run().await {
                     Ok(_) => {

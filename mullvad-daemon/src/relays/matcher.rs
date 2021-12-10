@@ -183,7 +183,6 @@ impl WireguardMatcher {
             public_key: data.public_key,
             endpoint: SocketAddr::new(host, port),
             allowed_ips: all_of_the_internet(),
-            protocol: data.protocol,
         };
         Some(MullvadEndpoint::Wireguard(MullvadWireguardEndpoint {
             peer: peer_config,

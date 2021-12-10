@@ -313,8 +313,6 @@ impl Relay {
                 _ => e.exit(),
             },
         };
-        let protocol = value_t!(matches.value_of("protocol"), String).unwrap_or_else(|e| e.exit());
-        let protocol = Self::validate_transport_protocol(&protocol);
         let mut private_key_str = String::new();
         println!("Reading private key from standard input");
         let _ = io::stdin().lock().read_line(&mut private_key_str);
@@ -344,7 +342,6 @@ impl Relay {
                                 .collect(),
                             endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port)
                                 .to_string(),
-                            protocol: protocol as i32,
                         }),
                         ipv4_gateway: ipv4_gateway.to_string(),
                         ipv6_gateway: ipv6_gateway
