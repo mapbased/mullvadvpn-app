@@ -43,10 +43,7 @@ const RELAYS_FILENAME: &str = "relays.json";
 const DEFAULT_WIREGUARD_PORT: u16 = 51820;
 const WIREGUARD_EXIT_CONSTRAINTS: WireguardMatcher = WireguardMatcher {
     peer: None,
-    port: Constraint::Only(TransportPort {
-        protocol: TransportProtocol::Udp,
-        port: Constraint::Only(DEFAULT_WIREGUARD_PORT),
-    }),
+    port: Constraint::Only(DEFAULT_WIREGUARD_PORT),
     ip_version: Constraint::Only(IpVersion::V4),
 };
 const WIREGUARD_TCP_PORTS: [(u16, u16); 3] = [(80, 80), (443, 443), (5001, 5001)];
@@ -505,11 +502,7 @@ impl RelaySelector {
                 }
 
                 if relay_constraints.wireguard_constraints.port.is_any() {
-                    relay_constraints.wireguard_constraints.port =
-                        Constraint::Only(TransportPort {
-                            protocol: preferred_protocol,
-                            port: preferred_port,
-                        });
+                    relay_constraints.wireguard_constraints.port = preferred_port;
                 }
 
                 relay_constraints.tunnel_protocol = Constraint::Only(preferred_tunnel);
@@ -542,10 +535,7 @@ impl RelaySelector {
         };
 
         if relay_constraints.wireguard_constraints.port.is_any() {
-            relay_constraints.wireguard_constraints.port = Constraint::Only(TransportPort {
-                port: preferred_port,
-                protocol: TransportProtocol::Udp,
-            });
+            relay_constraints.wireguard_constraints.port = preferred_port;
         }
 
         relay_constraints.tunnel_protocol = Constraint::Only(preferred_tunnel);
@@ -703,18 +693,14 @@ impl RelaySelector {
         }
     }
 
-    fn preferred_wireguard_port(retry_attempt: u32) -> Constraint<TransportPort> {
+    fn preferred_wireguard_port(retry_attempt: u32) -> Constraint<u16> {
         // This ensures that if after the first 2 failed attempts the daemon does not
         // connect, then afterwards 2 of each 4 successive attempts will try to connect
         // on port 53.
-        let port = match retry_attempt % 4 {
+        match retry_attempt % 4 {
             0 | 1 => Constraint::Any,
             _ => Constraint::Only(53),
-        };
-        Constraint::Only(TransportPort {
-            port,
-            protocol: TransportProtocol::Udp,
-        })
+        }
     }
 
     fn preferred_openvpn_constraints(retry_attempt: u32) -> (Constraint<u16>, TransportProtocol) {

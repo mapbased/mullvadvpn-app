@@ -428,7 +428,7 @@ impl Match<OpenVpnEndpointData> for OpenVpnConstraints {
 #[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct WireguardConstraints {
-    pub port: Constraint<TransportPort>,
+    pub port: Constraint<u16>,
     pub ip_version: Constraint<IpVersion>,
     pub use_multihop: bool,
     pub entry_location: Constraint<LocationConstraint>,
@@ -439,12 +439,8 @@ impl fmt::Display for WireguardConstraints {
         match self.port {
             Constraint::Any => write!(f, "any port")?,
             Constraint::Only(port) => {
-                match port.port {
-                    Constraint::Any => write!(f, "any port")?,
-                    Constraint::Only(port) => write!(f, "port {}", port)?,
-                }
-                write!(f, " over {}", port.protocol)?;
-            }
+                write!(f, "port {}", port)?
+            },
         }
         write!(f, " over ")?;
         match self.ip_version {

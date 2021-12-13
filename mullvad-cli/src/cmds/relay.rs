@@ -62,14 +62,6 @@ impl Command for Relay {
                                         .multiple(true),
                                 )
                                 .arg(
-                                    clap::Arg::with_name("protocol")
-                                        .help("Transport protocol. If TCP is selected, traffic is \
-                                               sent over TCP using a udp-over-tcp proxy")
-                                        .long("protocol")
-                                        .default_value("udp")
-                                        .possible_values(&["udp", "tcp"]),
-                                )
-                                .arg(
                                     clap::Arg::with_name("v6-gateway")
                                         .help("IPv6 gateway address")
                                         .long("v6-gateway")
@@ -162,14 +154,6 @@ impl Command for Relay {
                                         clap::Arg::with_name("port")
                                             .help("Port to use. Either 'any' or a specific port")
                                             .long("port")
-                                            .takes_value(true),
-                                    )
-                                    .arg(
-                                        clap::Arg::with_name("transport protocol")
-                                            .help("Transport protocol. If TCP is selected, traffic is \
-                                                   sent over TCP using a udp-over-tcp proxy")
-                                            .long("protocol")
-                                            .possible_values(&["any", "udp", "tcp"])
                                             .takes_value(true),
                                     )
                                     .arg(
@@ -553,8 +537,12 @@ impl Relay {
         let mut rpc = new_rpc_client().await?;
         let mut wireguard_constraints = self.get_wireguard_constraints(&mut rpc).await?;
 
-        wireguard_constraints.port =
-            parse_transport_port(matches, &mut wireguard_constraints.port)?;
+        if let Some(port) = matches.value_of("port") {
+            wireguard_constraints.port = match parse_port_constraint(port)? {
+                Constraint::Any => 0,
+                Constraint::Only(specific_port) => u32::from(specific_port),
+            }
+        }
 
         if let Some(ipv) = matches.value_of("ip version") {
             wireguard_constraints.ip_version =

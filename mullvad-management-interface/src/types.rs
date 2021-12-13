@@ -523,11 +523,7 @@ impl From<mullvad_types::relay_constraints::RelaySettings> for RelaySettings {
                     }),
 
                     wireguard_constraints: Some(WireguardConstraints {
-                        port: constraints
-                            .wireguard_constraints
-                            .port
-                            .option()
-                            .map(TransportPort::from),
+                        port: u32::from(constraints.wireguard_constraints.port.unwrap_or(0)),
                         ip_version: constraints
                             .wireguard_constraints
                             .ip_version
@@ -727,10 +723,6 @@ impl TryFrom<&WireguardConstraints> for mullvad_types::relay_constraints::Wiregu
         use mullvad_types::relay_constraints as mullvad_constraints;
         use talpid_types::net;
 
-        let wireguard_transport_port = match &constraints.port {
-            Some(port) => Some(mullvad_constraints::TransportPort::try_from(port.clone())?),
-            None => None,
-        };
         let ip_version = match &constraints.ip_version {
             Some(constraint) => match IpVersion::from_i32(constraint.protocol) {
                 Some(IpVersion::V4) => Some(net::IpVersion::V4),
@@ -745,7 +737,11 @@ impl TryFrom<&WireguardConstraints> for mullvad_types::relay_constraints::Wiregu
         };
 
         Ok(mullvad_constraints::WireguardConstraints {
-            port: Constraint::from(wireguard_transport_port),
+            port: if constraints.port == 0 {
+                Constraint::Any
+            } else {
+                Constraint::Only(constraints.port as u16)
+            },
             ip_version: Constraint::from(ip_version),
             use_multihop: constraints.use_multihop,
             entry_location: constraints
