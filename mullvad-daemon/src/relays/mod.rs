@@ -46,7 +46,6 @@ const WIREGUARD_EXIT_CONSTRAINTS: WireguardMatcher = WireguardMatcher {
     port: Constraint::Only(DEFAULT_WIREGUARD_PORT),
     ip_version: Constraint::Only(IpVersion::V4),
 };
-const WIREGUARD_TCP_PORTS: [(u16, u16); 3] = [(80, 80), (443, 443), (5001, 5001)];
 
 #[derive(err_derive::Error, Debug)]
 #[error(no_from)]
@@ -102,17 +101,6 @@ impl ParsedRelays {
                         latitude,
                         longitude,
                     });
-
-                    for wg_tunnel in &relay.tunnels.wireguard {
-                        relay_with_location
-                            .tunnels
-                            .wireguard
-                            .push(WireguardEndpointData {
-                                protocol: TransportProtocol::Tcp,
-                                port_ranges: WIREGUARD_TCP_PORTS.to_vec(),
-                                ..wg_tunnel.clone()
-                            });
-                    }
 
                     relays.push(relay_with_location);
                 }
