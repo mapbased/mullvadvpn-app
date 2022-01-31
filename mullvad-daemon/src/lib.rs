@@ -30,7 +30,10 @@ use futures::{
     future::{abortable, AbortHandle, Future},
     StreamExt,
 };
-use mullvad_rpc::{availability::ApiAvailabilityHandle, proxy::ProxyConfig};
+use mullvad_rpc::{
+    availability::ApiAvailabilityHandle,
+    proxy::{ProxyConfig, ProxyConfigSettings},
+};
 use mullvad_types::{
     account::{AccountData, AccountToken, VoucherSubmission},
     endpoint::MullvadEndpoint,
@@ -1393,7 +1396,9 @@ where
         };
         let config = match bridge {
             Some((settings, _relay)) => match settings {
-                ProxySettings::Shadowsocks(ss_settings) => ProxyConfig::Proxied(ss_settings),
+                ProxySettings::Shadowsocks(ss_settings) => {
+                    ProxyConfig::Proxied(ProxyConfigSettings::Shadowsocks(ss_settings))
+                }
                 _ => {
                     log::error!("Received unexpected proxy settings type");
                     ProxyConfig::Tls
@@ -1414,7 +1419,7 @@ where
             .unbounded_send(TunnelCommand::AllowEndpoint(allowed_endpoint, tx));
 
         if rx.await.is_ok() {
-            log::debug!("New API endpoint: {:?}. {}", config, request.retry_attempt);
+            log::debug!("API endpoint: {}", config);
             self.api_proxy_config = config.clone();
             let cache_dir = self.cache_dir.clone();
             tokio::spawn(async move {
@@ -1436,12 +1441,14 @@ where
             let _ = self
                 .tunnel_command_tx
                 .unbounded_send(TunnelCommand::AllowEndpoint(
-                    Self::get_allowed_endpoint(endpoint),
+                    Self::get_allowed_endpoint(endpoint.clone()),
                     tx,
                 ));
             if rx.await.is_err() {
                 // We can't do much if this fails
                 log::error!("Failed to update API endpoint");
+            } else {
+                log::debug!("API endpoint: {} (unproxied)", endpoint);
             }
         }
     }
