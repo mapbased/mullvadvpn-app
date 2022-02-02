@@ -251,17 +251,11 @@ impl Match<WireguardEndpointData> for WireguardMatcher {
     fn matches(&self, endpoint: &WireguardEndpointData) -> bool {
         match self.port {
             Constraint::Any => true,
-            Constraint::Only(TransportPort { port, protocol }) => {
-                if protocol != endpoint.protocol {
-                    return false;
-                }
-                match port {
-                    Constraint::Any => true,
-                    Constraint::Only(port) => endpoint
-                        .port_ranges
-                        .iter()
-                        .any(|range| (port >= range.0 && port <= range.1)),
-                }
+            Constraint::Only(port) => {
+                endpoint
+                    .port_ranges
+                    .iter()
+                    .any(|range| (port >= range.0 && port <= range.1))
             }
         }
     }
@@ -297,16 +291,9 @@ impl TunnelMatcher for WireguardMatcher {
     }
 
     fn mullvad_endpoint(&self, relay: &Relay) -> Option<MullvadEndpoint> {
-        let valid_relays = relay
+        relay
             .tunnels
             .wireguard
-            .iter()
-            .filter(|tunnel| match self.port {
-                Constraint::Any => true,
-                Constraint::Only(port) => port.protocol == tunnel.protocol,
-            })
-            .collect::<Vec<_>>();
-        valid_relays
             .choose(&mut rand::thread_rng())
             .and_then(|wg_tunnel| self.wg_data_to_endpoint(relay, (*wg_tunnel).clone()))
     }
