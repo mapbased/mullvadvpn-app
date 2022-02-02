@@ -11,7 +11,7 @@ use mullvad_types::{
         BridgeState, Constraint, InternalBridgeConstraints, LocationConstraint, Match,
         OpenVpnConstraints, Providers, RelayConstraints, Set, TransportPort, WireguardConstraints,
     },
-    relay_list::{Relay, RelayList, WireguardEndpointData},
+    relay_list::{Relay, RelayList},
 };
 use parking_lot::Mutex;
 use rand::{self, seq::SliceRandom, Rng};
