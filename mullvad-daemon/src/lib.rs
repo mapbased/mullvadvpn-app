@@ -688,9 +688,11 @@ where
             }
         });
 
-        let proxy_provider =
-            api::MullvadProxyConfigProvider::new(internal_event_tx.to_specialized_sender());
-        let rpc_handle = rpc_runtime.mullvad_rest_handle(Some(Box::new(proxy_provider)));
+        let proxy_provider = api::create_api_config_provider(
+            internal_event_tx.to_specialized_sender(),
+            ProxyConfig::Tls,
+        );
+        let rpc_handle = rpc_runtime.mullvad_rest_handle(proxy_provider).await;
 
         Self::forward_offline_state(api_availability.clone(), offline_state_rx).await;
 
@@ -1529,7 +1531,7 @@ where
 
         match &self.tunnel_state {
             Disconnected => {
-                let location = self.get_geo_location();
+                let location = self.get_geo_location().await;
                 tokio::spawn(async {
                     Self::oneshot_send(tx, location.await.ok(), "current location");
                 });
@@ -1542,7 +1544,7 @@ where
             }
             Connected { location, .. } => {
                 let relay_location = location.clone();
-                let location_future = self.get_geo_location();
+                let location_future = self.get_geo_location().await;
                 tokio::spawn(async {
                     let location = location_future.await;
                     Self::oneshot_send(
@@ -1563,8 +1565,8 @@ where
         }
     }
 
-    fn get_geo_location(&mut self) -> impl Future<Output = Result<GeoIpLocation, ()>> {
-        let rpc_service = self.rpc_runtime.rest_handle();
+    async fn get_geo_location(&mut self) -> impl Future<Output = Result<GeoIpLocation, ()>> {
+        let rpc_service = self.rpc_runtime.rest_handle().await;
         async {
             geoip::send_location_request(rpc_service)
                 .await
