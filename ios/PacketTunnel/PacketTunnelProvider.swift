@@ -36,9 +36,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var tunnelConnectionInfo: TunnelConnectionInfo? {
         didSet {
             if let tunnelConnectionInfo = tunnelConnectionInfo {
-                self.providerLogger.debug("Set tunnel relay to \(tunnelConnectionInfo.hostname)")
+                self.providerLogger.debug("Set tunnel relay to \(tunnelConnectionInfo.hostname).")
             } else {
-                self.providerLogger.debug("Unset tunnel relay")
+                self.providerLogger.debug("Unset tunnel relay.")
             }
         }
     }
@@ -59,99 +59,120 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func startTunnel(options: [String : NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let tunnelOptions = PacketTunnelOptions(rawOptions: options ?? [:])
-        let appSelectorResult: Result<RelaySelectorResult?, Error> = Result { try tunnelOptions.getSelectorResult() }
+        var appSelectorResult: RelaySelectorResult?
 
-        switch appSelectorResult {
-        case .success(.some(let selectorResult)):
-            providerLogger.debug("Start the tunnel via app, connect to \(selectorResult.tunnelConnectionInfo.hostname)")
+        // Parse relay selector from tunnel options.
+        do {
+            appSelectorResult = try tunnelOptions.getSelectorResult()
 
-        case .success(nil):
-            if tunnelOptions.isOnDemand() {
-                providerLogger.debug("Start the tunnel via on-demand rule")
-            } else {
-                providerLogger.debug("Start the tunnel via system")
+            switch appSelectorResult {
+            case .some(let selectorResult):
+                providerLogger.debug("Start the tunnel via app, connect to \(selectorResult.tunnelConnectionInfo.hostname).")
+
+            case .none:
+                if tunnelOptions.isOnDemand() {
+                    providerLogger.debug("Start the tunnel via on-demand rule.")
+                } else {
+                    providerLogger.debug("Start the tunnel via system.")
+                }
             }
-
-        case .failure(let error):
-            providerLogger.debug("Start the tunnel via app")
+        } catch {
+            providerLogger.debug("Start the tunnel via app.")
             providerLogger.error(
                 chainedError: AnyChainedError(error),
                 message: "Failed to decode relay selector result passed from the app. Will continue by picking new relay."
             )
         }
 
-        makeConfiguration(appSelectorResult.flattenValue)
-            .asPromise()
-            .receive(on: dispatchQueue)
-            .mapThen { tunnelConfiguration in
-                let tunnelConnectionInfo = tunnelConfiguration.selectorResult.tunnelConnectionInfo
-                self.tunnelConnectionInfo = tunnelConnectionInfo
+        // Read tunnel confguration.
+        let tunnelConfiguration: PacketTunnelConfiguration
+        switch makeConfiguration(appSelectorResult) {
+        case .success(let configuration):
+            tunnelConfiguration = configuration
 
-                return self.adapter.start(tunnelConfiguration: tunnelConfiguration.wgTunnelConfig)
-                    .mapError { error in
-                        return PacketTunnelProviderError.startWireguardAdapter(error)
-                    }
-                    .receive(on: self.dispatchQueue)
+        case .failure(let error):
+            providerLogger.error(chainedError: error, message: "Failed to start the tunnel.")
+            completionHandler(error)
+            return
+        }
+
+        // Set tunnel connection info.
+        dispatchQueue.async {
+            self.tunnelConnectionInfo = tunnelConfiguration.selectorResult.tunnelConnectionInfo
+        }
+
+        // Start tunnel.
+        adapter.start(tunnelConfiguration: tunnelConfiguration.wgTunnelConfig) { error in
+            self.dispatchQueue.async {
+                let tunnelProviderError = error.map { PacketTunnelProviderError.startWireguardAdapter($0) }
+
+                if let tunnelProviderError = tunnelProviderError {
+                    self.providerLogger.error(chainedError: tunnelProviderError, message: "Failed to start the tunnel.")
+                } else {
+                    self.providerLogger.debug("Started the tunnel.")
+                }
+
+                completionHandler(tunnelProviderError)
             }
-            .onSuccess {
-                self.providerLogger.debug("Started the tunnel")
-            }
-            .onFailure { error in
-                self.providerLogger.error(chainedError: error, message: "Failed to start the tunnel")
-            }
-            .observe { completion in
-                completionHandler(completion.unwrappedValue?.error)
-            }
+        }
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         providerLogger.debug("Stop the tunnel: \(reason)")
 
-        adapter.stop()
-            .receive(on: self.dispatchQueue)
-            .mapError { error in
-                return PacketTunnelProviderError.stopWireguardAdapter(error)
-            }
-            .onFailure { error in
-                self.providerLogger.error(chainedError: error, message: "Failed to stop the tunnel gracefully")
-            }
-            .observe { _ in
-                self.providerLogger.debug("Stopped the tunnel")
+        adapter.stop { error in
+            self.dispatchQueue.async {
+                let tunnelProviderError = error.map { PacketTunnelProviderError.stopWireguardAdapter($0) }
+
+                if let tunnelProviderError = tunnelProviderError {
+                    self.providerLogger.error(chainedError: tunnelProviderError, message: "Failed to stop the tunnel gracefully.")
+                }
+
+                self.providerLogger.debug("Stopped the tunnel.")
                 completionHandler()
             }
+        }
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
-        Result { try TunnelIPC.Coding.decodeRequest(messageData) }
-            .mapError { PacketTunnelProviderError.ipcHandler($0) }
-            .asPromise()
-            .onFailure { error in
-                self.providerLogger.error(chainedError: error, message: "Failed to decode the app message request")
+        dispatchQueue.async {
+            let request: TunnelIPC.Request
+            do {
+                request = try TunnelIPC.Coding.decodeRequest(messageData)
+            } catch {
+                self.providerLogger.error(chainedError: AnyChainedError(error), message: "Failed to decode the app message request.")
+
+                completionHandler?(nil)
+                return
             }
-            .receive(on: dispatchQueue)
-            .mapThen { request -> Result<Data?, PacketTunnelProviderError>.Promise in
-                self.providerLogger.debug("handleAppMessage: \(request)")
 
-                switch request {
-                case .reloadTunnelSettings:
-                    self.reloadTunnelSettings().observe { _ in }
-                    return .success(nil)
+            self.providerLogger.debug("Received app message: \(request)")
 
-                case .tunnelConnectionInfo:
-                    return Result { try TunnelIPC.Coding.encodeResponse(self.tunnelConnectionInfo) }
-                        .mapError { PacketTunnelProviderError.ipcHandler($0) }
-                        .map { data -> Data? in
-                            return .some(data)
-                        }
-                        .flatMapError { error in
-                            self.providerLogger.error(chainedError: error, message: "Failed to encode the app message response for \(request)")
-                            return .success(nil)
-                        }
-                        .asPromise()
+            switch request {
+            case .reloadTunnelSettings:
+                self.providerLogger.debug("Reloading tunnel settings...")
+
+                self.reloadTunnelSettings { error in
+                    if let error = error {
+                        self.providerLogger.error(chainedError: error, message: "Failed to reload tunnel settings.")
+                    } else {
+                        self.providerLogger.debug("Reloaded tunnel settings.")
+                    }
                 }
-            }.observe { completion in
-                completionHandler?(completion.unwrappedValue?.value ?? nil)
+
+                completionHandler?(nil)
+
+            case .tunnelConnectionInfo:
+                var response: Data?
+                do {
+                    response = try TunnelIPC.Coding.encodeResponse(self.tunnelConnectionInfo)
+                } catch {
+                    self.providerLogger.error(chainedError: AnyChainedError(error), message: "Failed to encode the app message response for \(request)")
+                }
+
+                completionHandler?(response)
             }
+        }
     }
 
     override func sleep(completionHandler: @escaping () -> Void) {
@@ -166,50 +187,70 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     // MARK: - Private
 
     private func makeConfiguration(_ appSelectorResult: RelaySelectorResult? = nil) -> Result<PacketTunnelConfiguration, PacketTunnelProviderError> {
-        return protocolConfiguration.passwordReference.map { data in
-            return Self.readTunnelSettings(keychainReference: data)
-                .flatMap { tunnelSettings in
-                    return (appSelectorResult.map { .success($0) } ?? Self.selectRelayEndpoint(relayConstraints: tunnelSettings.relayConstraints))
-                        .map { (selectorResult) -> PacketTunnelConfiguration in
-                            return PacketTunnelConfiguration(
-                                tunnelSettings: tunnelSettings,
-                                selectorResult: selectorResult
-                            )
-                        }
-                }
-        } ?? .failure(.missingKeychainConfigurationReference)
-    }
+        guard let passwordRef = protocolConfiguration.passwordReference else {
+            return .failure(.missingKeychainConfigurationReference)
+        }
 
-    private func reloadTunnelSettings() -> Result<(), PacketTunnelProviderError>.Promise {
-        providerLogger.debug("Reload tunnel settings")
+        let keychainEntry: TunnelSettingsManager.KeychainEntry
+        switch TunnelSettingsManager.load(searchTerm: .persistentReference(passwordRef)) {
+        case .success(let entry):
+            keychainEntry = entry
+        case .failure(let error):
+            return .failure(.cannotReadTunnelSettings(error))
+        }
 
-        return makeConfiguration()
-            .asPromise()
-            .mapThen { packetTunnelConfig in
-                let tunnelConnectionInfo = packetTunnelConfig.selectorResult.tunnelConnectionInfo
-                let oldTunnelConnectionInfo = self.tunnelConnectionInfo
-                self.tunnelConnectionInfo = tunnelConnectionInfo
-
-                return self.adapter.update(tunnelConfiguration: packetTunnelConfig.wgTunnelConfig)
-                    .receive(on: self.dispatchQueue)
-                    .mapError { error in
-                        return PacketTunnelProviderError.updateWireguardConfiguration(error)
-                    }
-                    .onSuccess { _ in
-                        self.providerLogger.debug("Updated WireGuard configuration")
-                    }
-                    .onFailure { error in
-                        self.tunnelConnectionInfo = oldTunnelConnectionInfo
-                        self.providerLogger.error(chainedError: error)
-                    }
+        let selectorResult: RelaySelectorResult
+        if let appSelectorResult = appSelectorResult {
+            selectorResult = appSelectorResult
+        } else {
+            let relayConstraints = keychainEntry.tunnelSettings.relayConstraints
+            switch Self.selectRelayEndpoint(relayConstraints: relayConstraints) {
+            case .success(let value):
+                selectorResult = value
+            case .failure(let error):
+                return .failure(error)
             }
+        }
+
+        let tunnelConfiguration = PacketTunnelConfiguration(
+            tunnelSettings: keychainEntry.tunnelSettings,
+            selectorResult: selectorResult
+        )
+
+        return .success(tunnelConfiguration)
     }
 
-    /// Read tunnel settings from Keychain
-    private class func readTunnelSettings(keychainReference: Data) -> Result<TunnelSettings, PacketTunnelProviderError> {
-        return TunnelSettingsManager.load(searchTerm: .persistentReference(keychainReference))
-            .mapError { PacketTunnelProviderError.cannotReadTunnelSettings($0) }
-            .map { $0.tunnelSettings }
+    private func reloadTunnelSettings(completionHandler: @escaping (PacketTunnelProviderError?) -> Void) {
+        dispatchPrecondition(condition: .onQueue(dispatchQueue))
+
+        // Read tunnel configuration.
+        let tunnelConfiguration: PacketTunnelConfiguration
+        switch makeConfiguration(nil) {
+        case .success(let configuration):
+            tunnelConfiguration = configuration
+
+        case .failure(let error):
+            completionHandler(error)
+            return
+        }
+
+        // Set tunnel connection info.
+        let tunnelConnectionInfo = tunnelConfiguration.selectorResult.tunnelConnectionInfo
+        let oldTunnelConnectionInfo = self.tunnelConnectionInfo
+        self.tunnelConnectionInfo = tunnelConnectionInfo
+
+        // Update WireGuard configuration.
+        adapter.update(tunnelConfiguration: tunnelConfiguration.wgTunnelConfig) { error in
+            self.dispatchQueue.async {
+                let tunnelProviderError = error.map { PacketTunnelProviderError.updateWireguardConfiguration($0) }
+
+                if tunnelProviderError != nil {
+                    self.tunnelConnectionInfo = oldTunnelConnectionInfo
+                }
+
+                completionHandler(tunnelProviderError)
+            }
+        }
     }
 
     /// Load relay cache with potential networking to refresh the cache and pick the relay for the
@@ -219,10 +260,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let prebundledRelaysURL = RelayCache.IO.preBundledRelaysFileURL!
 
         return RelayCache.IO.readWithFallback(cacheFileURL: cacheFileURL, preBundledRelaysFileURL: prebundledRelaysURL)
-            .mapError { relayCacheError -> PacketTunnelProviderError in
-                return .readRelayCache(relayCacheError)
+            .mapError { error in
+                return PacketTunnelProviderError.readRelayCache(error)
             }
-            .flatMap { cachedRelayList -> Result<RelaySelectorResult, PacketTunnelProviderError> in
+            .flatMap { cachedRelayList in
                 if let selectorResult = RelaySelector.evaluate(relays: cachedRelayList.relays, constraints: relayConstraints) {
                     return .success(selectorResult)
                 } else {
@@ -254,34 +295,28 @@ enum PacketTunnelProviderError: ChainedError {
     /// Failure to update the Wireguard configuration
     case updateWireguardConfiguration(WireGuardAdapterError)
 
-    /// IPC handler failure
-    case ipcHandler(Error)
-
     var errorDescription: String? {
         switch self {
         case .readRelayCache:
-            return "Failure to read the relay cache"
+            return "Failure to read the relay cache."
 
         case .noRelaySatisfyingConstraint:
-            return "No relay satisfying the given constraint"
+            return "No relay satisfying the given constraint."
 
         case .missingKeychainConfigurationReference:
-            return "Keychain configuration reference is not set on protocol configuration"
+            return "Keychain configuration reference is not set on protocol configuration."
 
         case .cannotReadTunnelSettings:
-            return "Failure to read tunnel settings"
+            return "Failure to read tunnel settings."
 
         case .startWireguardAdapter:
-            return "Failure to start the WireGuard adapter"
+            return "Failure to start the WireGuard adapter."
 
         case .stopWireguardAdapter:
-            return "Failure to stop the WireGuard adapter"
+            return "Failure to stop the WireGuard adapter."
 
         case .updateWireguardConfiguration:
-            return "Failure to update the Wireguard configuration"
-
-        case .ipcHandler:
-            return "Failure to handle the IPC request"
+            return "Failure to update the Wireguard configuration."
         }
     }
 }
@@ -347,32 +382,6 @@ extension WireGuardLogLevel {
     }
 }
 
-extension WireGuardAdapter {
-    func start(tunnelConfiguration: TunnelConfiguration) -> Result<(), WireGuardAdapterError>.Promise {
-        return Result<(), WireGuardAdapterError>.Promise { resolver in
-            self.start(tunnelConfiguration: tunnelConfiguration) { error in
-                resolver.resolve(value: error.map { .failure($0) } ?? .success(()))
-            }
-        }
-    }
-
-    func stop() -> Result<(), WireGuardAdapterError>.Promise {
-        return Result<(), WireGuardAdapterError>.Promise { resolver in
-            self.stop { error in
-                resolver.resolve(value: error.map { .failure($0) } ?? .success(()))
-            }
-        }
-    }
-
-    func update(tunnelConfiguration: TunnelConfiguration) -> Result<(), WireGuardAdapterError>.Promise {
-        return Result<(), WireGuardAdapterError>.Promise { resolver in
-            self.update(tunnelConfiguration: tunnelConfiguration) { error in
-                resolver.resolve(value: error.map { .failure($0) } ?? .success(()))
-            }
-        }
-    }
-}
-
 extension WireGuardAdapterError: LocalizedError {
     public var errorDescription: String? {
         switch self {
@@ -393,10 +402,10 @@ extension WireGuardAdapterError: LocalizedError {
             return "Failure to resolve endpoints:\n\(detailedErrorDescription)"
 
         case .setNetworkSettings:
-            return "Failure to set network settings"
+            return "Failure to set network settings."
 
         case .startWireGuardBackend(let code):
-            return "Failure to start WireGuard backend (error code: \(code))"
+            return "Failure to start WireGuard backend (error code: \(code))."
         }
     }
 }
