@@ -310,7 +310,7 @@ impl RelaySelector {
         }
 
         let matcher = RelayMatcher::from(relay_constraints.clone());
-        let matching_locations: Vec<Location> = self
+        let mut matching_locations: Vec<Location> = self
             .parsed_relays
             .lock()
             .relays()
@@ -322,6 +322,7 @@ impl RelaySelector {
                     .and_then(|relay| relay.location)
             })
             .collect();
+        matching_locations.dedup_by(|a, b| a.has_same_city(b));
 
         if matching_locations.is_empty() {
             return None;
@@ -708,13 +709,16 @@ impl RelaySelector {
             return None;
         }
 
-        if let Some(location) = location {
+        let relay = if let Some(location) = location {
             let location = location.into();
             matching_relays.sort_by_cached_key(|relay| {
                 (relay.location.as_ref().unwrap().distance_from(&location) * 1000.0) as i64
             });
-        }
-        matching_relays.get(0).and_then(|relay| {
+            matching_relays.get(0)
+        } else {
+            self.pick_random_relay(&matching_relays)
+        };
+        relay.and_then(|relay| {
             self.pick_random_bridge(&relay)
                 .map(|bridge| (bridge, relay.clone()))
         })

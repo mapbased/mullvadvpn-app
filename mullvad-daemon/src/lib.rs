@@ -1393,6 +1393,7 @@ where
         let location = self
             .last_generated_entry_relay
             .as_ref()
+            .or(self.last_generated_relay.as_ref())
             .and_then(|relay| relay.location.as_ref().map(Coordinates::from))
             .or_else(|| {
                 if let RelaySettings::Normal(settings) = self.settings.get_relay_settings() {
@@ -1401,27 +1402,24 @@ where
                     None
                 }
             });
-
-        let bridge = location.and_then(|location| {
-            if request.retry_attempt % 3 > 0 {
-                let constraints = match &self.settings.bridge_settings {
-                    BridgeSettings::Normal(settings) => InternalBridgeConstraints {
-                        location: settings.location.clone(),
-                        providers: settings.providers.clone(),
-                        transport_protocol: Constraint::Only(TransportProtocol::Tcp),
-                    },
-                    _ => InternalBridgeConstraints {
-                        location: Constraint::Any,
-                        providers: Constraint::Any,
-                        transport_protocol: Constraint::Only(TransportProtocol::Tcp),
-                    },
-                };
-                self.relay_selector
-                    .get_proxy_settings(&constraints, Some(location))
-            } else {
-                None
-            }
-        });
+        let bridge = if request.retry_attempt % 3 > 0 {
+            let constraints = match &self.settings.bridge_settings {
+                BridgeSettings::Normal(settings) => InternalBridgeConstraints {
+                    location: settings.location.clone(),
+                    providers: settings.providers.clone(),
+                    transport_protocol: Constraint::Only(TransportProtocol::Tcp),
+                },
+                _ => InternalBridgeConstraints {
+                    location: Constraint::Any,
+                    providers: Constraint::Any,
+                    transport_protocol: Constraint::Only(TransportProtocol::Tcp),
+                },
+            };
+            self.relay_selector
+                .get_proxy_settings(&constraints, location)
+        } else {
+            None
+        };
         let config = match bridge {
             Some((settings, _relay)) => match settings {
                 ProxySettings::Shadowsocks(ss_settings) => {
