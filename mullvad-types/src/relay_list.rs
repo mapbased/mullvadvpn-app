@@ -83,6 +83,9 @@ pub struct Relay {
     #[serde(skip_serializing_if = "RelayBridges::is_empty", default)]
     #[cfg_attr(target_os = "android", jnix(skip))]
     pub bridges: RelayBridges,
+    #[serde(skip_serializing_if = "RelayObfuscators::is_empty", default)]
+    #[cfg_attr(target_os = "android", jnix(skip))]
+    pub obfuscators: RelayObfuscators,
     #[cfg_attr(target_os = "android", jnix(skip))]
     pub location: Option<Location>,
 }
@@ -194,4 +197,25 @@ impl ShadowsocksEndpointData {
             cipher: self.cipher.clone(),
         })
     }
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RelayObfuscators {
+    pub udp2tcp: Vec<Udp2TcpEndpointData>,
+}
+
+impl RelayObfuscators {
+    pub fn is_empty(&self) -> bool {
+        self.udp2tcp.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.udp2tcp.clear();
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Deserialize, Serialize)]
+pub struct Udp2TcpEndpointData {
+    pub port: u16,
 }

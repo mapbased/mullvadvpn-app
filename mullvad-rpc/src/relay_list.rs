@@ -314,6 +314,7 @@ fn relay(relay: Relay, location: location::Location) -> relay_list::Relay {
         weight: relay.weight,
         tunnels: Default::default(),
         bridges: Default::default(),
+        obfuscators: Default::default(),
         location: Some(location),
     }
 }

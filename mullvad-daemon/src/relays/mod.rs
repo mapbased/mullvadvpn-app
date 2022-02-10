@@ -11,7 +11,7 @@ use mullvad_types::{
         BridgeState, Constraint, InternalBridgeConstraints, LocationConstraint, Match,
         OpenVpnConstraints, Providers, RelayConstraints, Set, TransportPort, WireguardConstraints,
     },
-    relay_list::{Relay, RelayList},
+    relay_list::{Relay, RelayList, Udp2TcpEndpointData},
 };
 use parking_lot::Mutex;
 use rand::{self, seq::SliceRandom, Rng};
@@ -46,6 +46,8 @@ const WIREGUARD_EXIT_CONSTRAINTS: WireguardMatcher = WireguardMatcher {
     port: Constraint::Only(DEFAULT_WIREGUARD_PORT),
     ip_version: Constraint::Only(IpVersion::V4),
 };
+
+const UDP2TCP_PORTS: [u16; 3] = [80, 443, 5001];
 
 #[derive(err_derive::Error, Debug)]
 #[error(no_from)]
@@ -101,6 +103,25 @@ impl ParsedRelays {
                         latitude,
                         longitude,
                     });
+
+                    //
+                    // Currently, a relay will not publicly expose multiple wireguard
+                    // services using their own unique key pairs.
+                    //
+                    // In other words, the `wireguard` vector will have 0 or 1 entries.
+                    //
+                    // Therefore, obfuscator records do not have to be tagged or linked back
+                    // to a specific wireguard instance.
+                    //
+
+                    if !relay.tunnels.wireguard.is_empty() {
+                        for port in UDP2TCP_PORTS {
+                            relay_with_location
+                                .obfuscators
+                                .udp2tcp
+                                .push(Udp2TcpEndpointData { port });
+                        }
+                    }
 
                     relays.push(relay_with_location);
                 }
@@ -867,7 +888,7 @@ mod test {
         relay_constraints::RelayConstraints,
         relay_list::{
             OpenVpnEndpointData, Relay, RelayBridges, RelayListCity, RelayListCountry,
-            RelayTunnels, WireguardEndpointData,
+            RelayObfuscators, RelayTunnels, WireguardEndpointData,
         },
     };
     use talpid_types::net::wireguard::PublicKey;
@@ -909,6 +930,9 @@ mod test {
                                     bridges: RelayBridges {
                                         shadowsocks: vec![],
                                     },
+                                    obfuscators: RelayObfuscators {
+                                        udp2tcp: vec![],
+                                    },
                                     location: None,
                                 },
                                 Relay {
@@ -933,6 +957,9 @@ mod test {
                                     },
                                     bridges: RelayBridges {
                                         shadowsocks: vec![],
+                                    },
+                                    obfuscators: RelayObfuscators {
+                                        udp2tcp: vec![],
                                     },
                                     location: None,
                                 },
@@ -964,6 +991,9 @@ mod test {
                                     },
                                     bridges: RelayBridges {
                                         shadowsocks: vec![],
+                                    },
+                                    obfuscators: RelayObfuscators {
+                                        udp2tcp: vec![],
                                     },
                                     location: None,
                                 },
