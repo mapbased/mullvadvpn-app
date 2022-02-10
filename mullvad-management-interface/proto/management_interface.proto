@@ -271,7 +271,8 @@ message ObfuscationSettings {
   enum ActiveObfuscator {
     NONE = 0;
     MOCK = 1;
-    CUSTOM = 2;
+	UDP2TCP = 2;
+    CUSTOM = 3;
   }
   ActiveObfuscator active_obfuscator = 1;
   CustomObfuscatorSettings custom_obfuscator_settings = 2;

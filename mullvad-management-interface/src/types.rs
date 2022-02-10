@@ -419,6 +419,7 @@ impl From<&mullvad_types::relay_constraints::ObfuscationSettings> for Obfuscatio
         use talpid_types::net::obfuscation::ObfuscatorType;
         let active_obfuscator = i32::from(match settings.active_obfuscator {
             Some(ObfuscatorType::Mock) => obfuscation_settings::ActiveObfuscator::Mock,
+            Some(ObfuscatorType::Udp2Tcp) => obfuscation_settings::ActiveObfuscator::Udp2tcp,
             Some(ObfuscatorType::Custom) => obfuscation_settings::ActiveObfuscator::Custom,
             None => obfuscation_settings::ActiveObfuscator::None,
         });
@@ -1177,6 +1178,7 @@ impl TryFrom<ObfuscationSettings> for mullvad_types::relay_constraints::Obfuscat
         let active_obfuscator = match ActiveObfuscator::from_i32(settings.active_obfuscator) {
             Some(ActiveObfuscator::None) => None,
             Some(ActiveObfuscator::Mock) => Some(ObfuscatorType::Mock),
+            Some(ActiveObfuscator::Udp2tcp) => Some(ObfuscatorType::Udp2Tcp),
             Some(ActiveObfuscator::Custom) => Some(ObfuscatorType::Custom),
             None => {
                 return Err(FromProtobufTypeError::InvalidArgument(

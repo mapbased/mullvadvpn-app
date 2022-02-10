@@ -482,6 +482,7 @@ impl fmt::Display for ObfuscationSettings {
         write!(f, "Currently using ")?;
         match self.active_obfuscator {
             None => write!(f, "no obfuscator.")?,
+            Some(Udp2Tcp) => write!(f, "udp2tcp obfuscator.")?,
             Some(Mock) => write!(f, "mock obfuscator.")?,
             Some(Custom) => write!(f, "custom obfuscator.")?,
         };

@@ -341,6 +341,7 @@ impl SettingsPersister {
             .as_ref()?
         {
             ObfuscatorType::Mock => Some(ObfuscatorConfig::Mock),
+            ObfuscatorType::Udp2Tcp => Some(ObfuscatorConfig::Udp2Tcp),
             ObfuscatorType::Custom => Some(ObfuscatorConfig::Custom {
                 address: self
                     .settings
