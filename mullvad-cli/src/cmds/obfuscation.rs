@@ -43,6 +43,7 @@ impl Obfuscation {
                 settings.active_obfuscator = match obfuscator_type {
                     "none" => None,
                     "mock" => Some(Mock),
+                    "udp2tcp" => Some(Udp2Tcp),
                     "custom" => Some(Custom),
                     _ => unreachable!("Unhandled obfuscator type"),
                 };
@@ -118,7 +119,7 @@ fn create_obfuscation_set_subcommand() -> clap::App<'static, 'static> {
                         .help("Specifies what kind of obfuscation should be used, if any")
                         .required(true)
                         .index(1)
-                        .possible_values(&["none", "mock", "custom"]),
+                        .possible_values(&["none", "mock", "udp2tcp", "custom"]),
                 ),
         )
         .subcommand(
