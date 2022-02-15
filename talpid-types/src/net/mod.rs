@@ -8,6 +8,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     str::FromStr,
 };
+use obfuscation::ObfuscatorConfig;
 
 pub mod obfuscation;
 pub mod openvpn;
@@ -55,7 +56,25 @@ impl TunnelParameters {
                 .as_ref()
                 .map(|proxy| proxy.get_endpoint().endpoint)
                 .unwrap_or(params.config.endpoint),
-            TunnelParameters::Wireguard(params) => params.connection.get_endpoint(),
+            TunnelParameters::Wireguard(params) => {
+                params
+                .obfuscation
+                .as_ref()
+                .map(|obfuscator| Self::get_obfuscator_endpoint(obfuscator))
+                .unwrap_or(params.connection.get_endpoint())
+            }
+        }
+    }
+
+    fn get_obfuscator_endpoint(obfuscator: &ObfuscatorConfig) -> Endpoint {
+        match obfuscator {
+            ObfuscatorConfig::Udp2Tcp{endpoint} => Endpoint {
+                address: *endpoint,
+                protocol: TransportProtocol::Tcp,
+            },
+            _ => {
+                unreachable!("Handle all obfuscators");
+            },
         }
     }
 
