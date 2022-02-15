@@ -139,6 +139,9 @@ pub enum Error {
     #[error(display = "No bridge available")]
     NoBridgeAvailable,
 
+    #[error(display = "Failed to select a compatible obfuscator")]
+    NoObfuscator,
+
     #[error(display = "No matching entry relay was found")]
     NoEntryRelayAvailable,
 
@@ -1138,6 +1141,20 @@ where
                         wg_data.addresses.ipv6_address.ip().into(),
                     ],
                 };
+
+                let obfuscation = match self.settings.get_obfuscation_settings() {
+                    Some(settings) => {
+                        let obfuscator = self
+                            .relay_selector
+                            .get_obfuscator(&settings, relay, &endpoint, retry_attempt)
+                            .ok_or(Error::NoObfuscator)?;
+                        Some(obfuscator)
+                    },
+                    _ => {
+                        None
+                    },
+                };
+
                 Ok(wireguard::TunnelParameters {
                     connection: wireguard::ConnectionConfig {
                         tunnel,
@@ -1148,7 +1165,7 @@ where
                     },
                     options: tunnel_options.wireguard.options,
                     generic_options: tunnel_options.generic,
-                    obfuscation: self.settings.get_obfuscation_config(),
+                    obfuscation: obfuscation,
                 }
                 .into())
             }

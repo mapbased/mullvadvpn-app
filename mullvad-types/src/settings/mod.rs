@@ -67,6 +67,7 @@ pub struct Settings {
     relay_settings: RelaySettings,
     #[cfg_attr(target_os = "android", jnix(skip))]
     pub bridge_settings: BridgeSettings,
+    // TODO: Change this into an optional enum
     #[cfg_attr(target_os = "android", jnix(skip))]
     pub obfuscation_settings: ObfuscationSettings,
     #[cfg_attr(target_os = "android", jnix(skip))]

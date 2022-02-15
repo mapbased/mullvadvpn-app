@@ -11,10 +11,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
-use talpid_types::{
-    net::obfuscation::{ObfuscatorConfig, ObfuscatorType},
-    ErrorExt,
-};
+use talpid_types::ErrorExt;
 use tokio::{
     fs,
     io::{self, AsyncWriteExt},
@@ -331,32 +328,14 @@ impl SettingsPersister {
         self.update(should_save).await
     }
 
-    pub fn get_obfuscation_config(
+    // TODO: Correct this function when source data type is updated.
+    pub fn get_obfuscation_settings(
         &self,
-    ) -> Option<talpid_types::net::obfuscation::ObfuscatorConfig> {
-        match self
-            .settings
-            .obfuscation_settings
-            .active_obfuscator
-            .as_ref()?
-        {
-            ObfuscatorType::Mock => Some(ObfuscatorConfig::Mock),
-            ObfuscatorType::Udp2Tcp => Some(ObfuscatorConfig::Udp2Tcp),
-            ObfuscatorType::Custom => Some(ObfuscatorConfig::Custom {
-                address: self
-                    .settings
-                    .obfuscation_settings
-                    .custom_obfuscator_settings
-                    .as_ref()?
-                    .address,
-                remote_endpoint: self
-                    .settings
-                    .obfuscation_settings
-                    .custom_obfuscator_settings
-                    .as_ref()?
-                    .endpoint,
-            }),
+    ) -> Option<ObfuscationSettings> {
+        if self.settings.obfuscation_settings.active_obfuscator.is_some() {
+            return Some(self.settings.obfuscation_settings.clone());
         }
+        None
     }
 
     async fn update(&mut self, should_save: bool) -> Result<bool, Error> {

@@ -17,13 +17,18 @@ use parking_lot::Mutex;
 use rand::{self, seq::SliceRandom, Rng};
 use std::{
     io,
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     path::Path,
     sync::Arc,
     time::{self, SystemTime},
 };
 use talpid_types::{
-    net::{openvpn::ProxySettings, wireguard, IpVersion, TransportProtocol, TunnelType},
+    net::{
+        obfuscation::{
+            ObfuscatorConfig, ObfuscatorType,
+        },
+        openvpn::ProxySettings, wireguard, IpVersion, TransportProtocol, TunnelType,
+    },
     ErrorExt,
 };
 
@@ -639,6 +644,34 @@ impl RelaySelector {
             self.pick_random_bridge(&relay)
                 .map(|bridge| (bridge, relay.clone()))
         })
+    }
+
+    pub fn get_obfuscator(
+        &self,
+        obfuscation_settings: &mullvad_types::relay_constraints::ObfuscationSettings,
+        relay: &Relay,
+        _endpoint: &MullvadWireguardEndpoint,
+        _retry_attempt: u32,
+    ) -> Option<ObfuscatorConfig> {
+        let active_obfuscator = obfuscation_settings
+            .active_obfuscator
+            .as_ref()
+            .expect("uhoh broken logic at callsite of get_obfuscator()");
+        match active_obfuscator {
+            ObfuscatorType::Udp2Tcp => {
+                relay.obfuscators.udp2tcp.first().map(|udp2tcp_endpoint| {
+                    ObfuscatorConfig::Udp2Tcp {
+                        endpoint: SocketAddr::new(
+                            relay.ipv4_addr_in.into(),
+                            udp2tcp_endpoint.port
+                        )
+                    }
+                })
+            },
+            _ => {
+                None
+            },
+        }
     }
 
     /// Returns preferred constraints

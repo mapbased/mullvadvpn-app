@@ -19,7 +19,10 @@ use std::{
 };
 #[cfg(windows)]
 use talpid_types::BoxedError;
-use talpid_types::ErrorExt;
+use talpid_types::{
+    ErrorExt,
+    net::obfuscation::ObfuscatorConfig,
+};
 use tunnel_obfuscation::{
     create_obfuscator, Error as ObfuscationError, Settings as ObfuscationSettings, Udp2TcpSettings,
 };
@@ -132,35 +135,42 @@ fn maybe_create_obfuscator(
 ) -> Result<Option<ObfuscatorHandle>> {
     // There are one or two peers.
     // The first one is always the entry relay.
-    if let Some(ref mut first_peer) = config.peers.get_mut(0) {
-        if first_peer.endpoint.port() == 8090 {
-            let settings = Udp2TcpSettings {
-                peer: first_peer.endpoint,
-                #[cfg(target_os = "linux")]
-                fwmark: Some(crate::linux::TUNNEL_FW_MARK),
-            };
-            let obfuscator = runtime
-                .block_on(create_obfuscator(&ObfuscationSettings::Udp2Tcp(settings)))
-                .map_err(Error::CreateObfuscatorError)?;
-            let endpoint = obfuscator.endpoint();
-            first_peer.endpoint = endpoint.address;
-            let (runner, abort_handle) = abortable(async move {
-                match obfuscator.run().await {
-                    Ok(_) => {
-                        let _ = close_msg_sender.send(CloseMsg::ObfuscatorExpired);
+    let mut first_peer = config.peers.get_mut(0).expect("missing peer");
+
+    if let Some(ref obfuscator_config) = config.obfuscator_config {
+        match obfuscator_config {
+            ObfuscatorConfig::Udp2Tcp{endpoint} => {
+                let settings = Udp2TcpSettings {
+                    peer: *endpoint,
+                    #[cfg(target_os = "linux")]
+                    fwmark: Some(crate::linux::TUNNEL_FW_MARK),
+                };
+                let obfuscator = runtime
+                    .block_on(create_obfuscator(&ObfuscationSettings::Udp2Tcp(settings)))
+                    .map_err(Error::CreateObfuscatorError)?;
+                let endpoint = obfuscator.endpoint();
+                first_peer.endpoint = endpoint.address;
+                let (runner, abort_handle) = abortable(async move {
+                    match obfuscator.run().await {
+                        Ok(_) => {
+                            let _ = close_msg_sender.send(CloseMsg::ObfuscatorExpired);
+                        }
+                        Err(error) => {
+                            log::error!(
+                                "{}",
+                                error.display_chain_with_msg("Obfuscation controller failed")
+                            );
+                            let _ = close_msg_sender
+                                .send(CloseMsg::ObfuscatorFailed(Error::ObfuscatorError(error)));
+                        }
                     }
-                    Err(error) => {
-                        log::error!(
-                            "{}",
-                            error.display_chain_with_msg("Obfuscation controller failed")
-                        );
-                        let _ = close_msg_sender
-                            .send(CloseMsg::ObfuscatorFailed(Error::ObfuscatorError(error)));
-                    }
-                }
-            });
-            runtime.spawn(runner);
-            return Ok(Some(ObfuscatorHandle::new(abort_handle)));
+                });
+                runtime.spawn(runner);
+                return Ok(Some(ObfuscatorHandle::new(abort_handle)));
+            },
+            _ => {
+                unreachable!("TODO: Handle all obfuscators");
+            },
         }
     }
     Ok(None)
