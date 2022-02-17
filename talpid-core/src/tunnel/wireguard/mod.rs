@@ -140,6 +140,7 @@ fn maybe_create_obfuscator(
     if let Some(ref obfuscator_config) = config.obfuscator_config {
         match obfuscator_config {
             ObfuscatorConfig::Udp2Tcp{endpoint} => {
+                log::trace!("Connecting to Udp2Tcp endpoint {:?}", *endpoint);
                 let settings = Udp2TcpSettings {
                     peer: *endpoint,
                     #[cfg(target_os = "linux")]
@@ -149,6 +150,7 @@ fn maybe_create_obfuscator(
                     .block_on(create_obfuscator(&ObfuscationSettings::Udp2Tcp(settings)))
                     .map_err(Error::CreateObfuscatorError)?;
                 let endpoint = obfuscator.endpoint();
+                log::trace!("Patching first WireGuard peer to become {:?}", endpoint);
                 first_peer.endpoint = endpoint.address;
                 let (runner, abort_handle) = abortable(async move {
                     match obfuscator.run().await {
