@@ -57,7 +57,13 @@ impl From<Location> for Coordinates {
 }
 
 impl Coordinates {
-    /// Computes the approximate midpoint of a set of locations
+    /// Computes the approximate midpoint of a set of locations.
+    ///
+    /// This works by calculating the mean Cartesian coordinates, and converting them
+    /// back to spherical coordinates. This is approximate, because the semi-minor (polar)
+    /// axis is assumed to equal the semi-major (equatorial) axis.
+    ///
+    /// https://en.wikipedia.org/wiki/Spherical_coordinate_system#Cartesian_coordinates
     pub fn midpoint(locations: &[Location]) -> Self {
         let mut x = 0f64;
         let mut y = 0f64;
