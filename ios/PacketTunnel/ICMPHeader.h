@@ -19,4 +19,19 @@ typedef struct __attribute__((packed)) {
     uint16_t sequenceNumber;
 } ICMPHeader;
 
+#if DEBUG
+typedef struct __attribute__((packed)) {
+    uint8_t versionAndHeaderLength;
+    uint8_t differentiatedServices;
+    uint16_t totalLength;
+    uint16_t identification;
+    uint16_t flagsAndFragmentOffset;
+    uint8_t timeToLive;
+    uint8_t protocol;
+    uint16_t headerChecksum;
+    uint8_t sourceAddress[4];
+    uint8_t destinationAddress[4];
+} IPv4Header;
+#endif
+
 #endif /* ICMPHeader_h */

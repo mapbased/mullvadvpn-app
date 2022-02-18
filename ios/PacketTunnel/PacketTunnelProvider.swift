@@ -12,18 +12,18 @@ import NetworkExtension
 import Logging
 import WireGuardKit
 
-class PacketTunnelProvider: NEPacketTunnelProvider {
+class PacketTunnelProvider: NEPacketTunnelProvider, TunnelMonitorDelegate {
 
-    /// Tunnel provider logger
+    /// Tunnel provider logger.
     private let providerLogger: Logger
 
-    /// WireGuard adapter logger
+    /// WireGuard adapter logger.
     private let tunnelLogger: Logger
 
-    /// Internal queue
+    /// Internal queue.
     private let dispatchQueue = DispatchQueue(label: "PacketTunnel", qos: .utility)
 
-    /// WireGuard adapter
+    /// WireGuard adapter.
     private lazy var adapter: WireGuardAdapter = {
         return WireGuardAdapter(with: self, logHandler: { [weak self] (logLevel, message) in
             self?.dispatchQueue.async {
@@ -32,7 +32,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         })
     }()
 
-    /// Tunnel connection info
+    private var startTunnelCompletionHandler: ((Error?) -> Void)?
+
+    /// Tunnel monitor.
+    private var tunnelMonitor: TunnelMonitor?
+
+    /// Tunnel connection info.
     private var tunnelConnectionInfo: TunnelConnectionInfo? {
         didSet {
             if let tunnelConnectionInfo = tunnelConnectionInfo {
@@ -44,17 +49,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override init() {
-        initLoggingSystem(bundleIdentifier: Bundle.main.bundleIdentifier!)
-
-        var providerLogger = Logger(label: "PacketTunnelProvider")
-        var tunnelLogger = Logger(label: "WireGuard")
-
         let pid = ProcessInfo.processInfo.processIdentifier
-        providerLogger[metadataKey: "pid"] = .stringConvertible(pid)
-        tunnelLogger[metadataKey: "pid"] = .stringConvertible(pid)
 
-        self.providerLogger = providerLogger
-        self.tunnelLogger = tunnelLogger
+        var metadata = Logger.Metadata()
+        metadata["pid"] = .string("\(pid)")
+
+        initLoggingSystem(bundleIdentifier: Bundle.main.bundleIdentifier!, metadata: metadata)
+
+        providerLogger = Logger(label: "PacketTunnelProvider")
+        tunnelLogger = Logger(label: "WireGuard")
     }
 
     override func startTunnel(options: [String : NSObject]?, completionHandler: @escaping (Error?) -> Void) {
@@ -105,20 +108,57 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         adapter.start(tunnelConfiguration: tunnelConfiguration.wgTunnelConfig) { error in
             self.dispatchQueue.async {
                 let tunnelProviderError = error.map { PacketTunnelProviderError.startWireguardAdapter($0) }
-
                 if let tunnelProviderError = tunnelProviderError {
                     self.providerLogger.error(chainedError: tunnelProviderError, message: "Failed to start the tunnel.")
-                } else {
-                    self.providerLogger.debug("Started the tunnel.")
+
+                    completionHandler(tunnelProviderError)
+                    return
                 }
 
-                completionHandler(tunnelProviderError)
+                self.providerLogger.debug("Started the tunnel.")
+
+                // Store completion handler and call it from TunnelMonitorDelegate once
+                // the connection is established.
+                self.startTunnelCompletionHandler = completionHandler
+
+                // Create tunnel monitor.
+                let newtTunnelMonitor = TunnelMonitor(queue: self.dispatchQueue, adapter: self.adapter)
+                newtTunnelMonitor.delegate = self
+
+                // Store tunnel monitor.
+                self.tunnelMonitor = newtTunnelMonitor
+
+                // Start tunnel monitor.
+                let probeAddress = tunnelConfiguration.selectorResult.endpoint.ipv4Gateway
+                self.providerLogger.debug("Starting tunnel monitor with probe address: \(probeAddress)...")
+
+                switch newtTunnelMonitor.start(address: probeAddress) {
+                case .success:
+                    self.providerLogger.debug("Started tunnel monitor.")
+
+                case .failure(let error):
+                    self.providerLogger.error(chainedError: AnyChainedError(error), message: "Failed to start the tunnel monitor")
+                    self.startTunnelCompletionHandler = nil
+                    
+                    self.adapter.stop { _ in
+                        completionHandler(PacketTunnelProviderError.startTunnelMonitor(error))
+                    }
+                }
             }
         }
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         providerLogger.debug("Stop the tunnel: \(reason)")
+
+        dispatchQueue.async {
+            // Stop tunnel monitor.
+            self.tunnelMonitor?.stop()
+            self.tunnelMonitor = nil
+
+            // Unset the start tunnel completion handler.
+            self.startTunnelCompletionHandler = nil
+        }
 
         adapter.stop { error in
             self.dispatchQueue.async {
@@ -182,6 +222,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func wake() {
         // Add code here to wake up.
+    }
+
+    // MARK: - TunnelMonitor
+
+    func tunnelMonitorDidDetermineConnectionEstablished(_ tunnelMonitor: TunnelMonitor) {
+        if let startTunnelCompletionHandler = startTunnelCompletionHandler {
+            providerLogger.debug("Call system start tunnel completion handler.")
+
+            startTunnelCompletionHandler(nil)
+            self.startTunnelCompletionHandler = nil
+        }
     }
 
     // MARK: - Private
@@ -295,6 +346,9 @@ enum PacketTunnelProviderError: ChainedError {
     /// Failure to update the Wireguard configuration
     case updateWireguardConfiguration(WireGuardAdapterError)
 
+    /// Failure to start tunnel monitor.
+    case startTunnelMonitor(TunnelMonitor.Error)
+
     var errorDescription: String? {
         switch self {
         case .readRelayCache:
@@ -317,6 +371,9 @@ enum PacketTunnelProviderError: ChainedError {
 
         case .updateWireguardConfiguration:
             return "Failure to update the Wireguard configuration."
+
+        case .startTunnelMonitor:
+            return "Failure to start tunnel monitor."
         }
     }
 }
