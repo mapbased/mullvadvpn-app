@@ -43,6 +43,10 @@ Line wrap the file at 100 chars.                                              Th
 - Fix scrollbar no longer responsive and usable when covered by other elements.
 - Fix settings file being truncated before being read.
 
+### Security
+- Enable "Always require VPN" by default if the settings cannot be parsed. This reduces the number
+  of errors that lead to the daemon unexpectedly starting into non-blocking mode.
+
 
 ## [2022.1-beta1] - 2022-02-14
 ### Added
